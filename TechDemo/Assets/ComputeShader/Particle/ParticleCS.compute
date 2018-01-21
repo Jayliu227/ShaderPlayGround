@@ -1,0 +1,88 @@
+﻿#pragma kernel Init
+#pragma kernel Emit
+#pragma kernel Update
+
+#define THREAD_X 16
+
+struct Particle {
+	bool isActive;
+	float3 position;
+	float3 velocity;
+	float4 color;
+	float duration;
+	float scale;
+};
+
+RWStructuredBuffer<Particle> _Particles;
+AppendStructuredBuffer<uint> _DeadList;
+ConsumeStructuredBuffer<uint> _ParticlePool;
+
+float _Time;
+float _DeltaTime;
+float _MaxVelocity;
+float _MaxScale;
+float _MinScale;
+float _LifeTime;
+float _Gravity;
+float3 _EmitPosition;
+
+// random function
+float rnd(in float2 uv){
+	return frac(sin(dot(uv.xy, float2(12.9898, 78.233))) * 43758.5453) * 2 - 1;
+}
+
+float3 rnd3(in float2 uv) {
+	float2 uv1 = uv * rnd(uv);
+	float2 uv2 = uv * rnd(uv1) + 20;
+	float2 uv3 = -uv * rnd(uv2);
+	return float3(rnd(uv1), rnd(uv2), rnd(uv3));
+}
+
+[numthreads(THREAD_X,1,1)]
+void Init (uint3 id : SV_DispatchThreadID)
+{
+	uint index = id.x;
+
+	_Particles[index].isActive = false;
+	_DeadList.Append(index);
+}
+
+[numthreads(THREAD_X, 1, 1)]
+void Emit(uint3 id : SV_DispatchThreadID)
+{
+	// get the index from particlePool buffer, which has the same value as DeadList
+	// because it was set in Emit Function (We Emit all the particles that are not active)
+	uint index = _ParticlePool.Consume();
+
+	float2 seed = float2(index + _Time, index + 1.6 + _Time);
+	float speed = rnd(seed) * _MaxVelocity;
+	float scale = (rnd(seed + 2) - 0.5) * 2 * (_MaxScale - _MinScale) + _MinScale;
+	float4 color = float4(1, 0, 0, 1);
+
+	_Particles[index].isActive = true;
+	_Particles[index].position = _EmitPosition;
+	_Particles[index].velocity = rnd3(seed) * speed;
+	_Particles[index].color = color;
+	_Particles[index].duration = _LifeTime;
+	_Particles[index].scale = scale;
+}
+
+[numthreads(THREAD_X, 1, 1)]
+void Update(uint3 id : SV_DispatchThreadID)
+{
+	uint index = id.x;
+
+	if (_Particles[index].isActive) {
+		_Particles[index].velocity.y -= _Gravity * _DeltaTime;
+		_Particles[index].position += _Particles[index].velocity * _DeltaTime;
+		_Particles[index].duration -= _DeltaTime;
+		
+		_Particles[index].color = lerp(float4(0, 1, 1, 1), float4(1, 0, 0, 1), saturate(_Particles[index].duration / _LifeTime - 0.2));
+		_Particles[index].color.a = max(_Particles[index].duration / _LifeTime, 0);
+
+		if (_Particles[index].duration <= 0) {
+			_Particles[index].isActive = false;
+			_DeadList.Append(index);
+		}
+	}
+}

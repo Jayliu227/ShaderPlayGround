@@ -1,0 +1,46 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// RW allows unordered access view, meaning you can randomly write to and read from it
+RWTexture2D<float4> texCopy;
+Texture2D<float4> tex;
+
+/*
+	wrap modes: Clamp or Repeat
+	filter: Point or Linear
+*/
+SamplerState _LinearClamp;
+SamplerState _LinearRepeat;
+SamplerState _PointClamp;
+SamplerState _PointRepeat;
+
+[numthreads(8,8,1)]
+void CSMain (uint2 id : SV_DispatchThreadID)
+{
+	/* 
+		three ways of getting the data from one texture
+
+		// optimize by changing the global variable to local variable
+		float w, h;
+		tex.GetDimensions(w, h);
+		float2 uv = float2(id.x / w, id.y / h);
+		float4 t = tex.SampleLevel(_LinearClamp, uv, 0);
+		
+		float4 t = tex[id];
+		
+		float4 t = tex[id];
+
+		// uint3(DispatchID.x, DispatchID.y, mipmap level)
+		float4 t = tex.Load(uint3(id, 0));
+	*/
+	texCopy[id] = float4(0.5, 0.5, 0.5, 0.5);
+}
+
+/*
+	in fragment shader, however, we can only use tex.Sample(FilterWrapMode fw, float2 uv);
+
+	fragment shader always runs in a group of at least 2x2 threads. Due to the shared memory
+	among the group members, each fragment shader can take the derivative of the neigbhoring
+	uv and determine the mipmap level. If the rate of change, the derivative, is high then we
+	will use higher mipmap level and vice versa.
+*/
